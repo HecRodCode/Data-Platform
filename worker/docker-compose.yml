@@ -2,8 +2,8 @@ version: "3.8"
 
 services:
   worker:
-    image: apache/airflow:2.9.2
-    command: worker
+    image: apache/airflow:3.2.0
+    command: celery worker
     env_file: ../.env
     user: "${AIRFLOW_UID:-1000}:0"
     volumes:
@@ -14,4 +14,6 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d celery@$${HOSTNAME}"]
       interval: 30s
+      timeout: 10s
       retries: 5
+      start_period: 30s
