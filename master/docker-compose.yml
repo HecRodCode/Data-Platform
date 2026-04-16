@@ -1,7 +1,20 @@
 x-airflow-common: &airflow-common
   image: apache/airflow:3.2.0
-  env_file: ../.env
+  env_file: .env
   user: "${AIRFLOW_UID:-1000}:0"
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: "${AIRFLOW__CORE__EXECUTOR}"
+    AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW__CORE__FERNET_KEY}"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "${AIRFLOW__CORE__LOAD_EXAMPLES}"
+    AIRFLOW__CORE__HOSTNAME_CALLABLE: "socket.gethostname"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}"
+    AIRFLOW__CELERY__BROKER_URL: "${AIRFLOW__CELERY__BROKER_URL}"
+    AIRFLOW__CELERY__RESULT_BACKEND: "${AIRFLOW__CELERY__RESULT_BACKEND}"
+    AIRFLOW__CELERY__WORKER_CONCURRENCY: "${AIRFLOW__CELERY__WORKER_CONCURRENCY}"
+    AIRFLOW__API__SECRET_KEY: "${AIRFLOW__API__SECRET_KEY}"
+    AIRFLOW__API__AUTH_STRATEGIES: "${AIRFLOW__API__AUTH_STRATEGIES}"
+    AIRFLOW__SIMPLE_AUTH_MANAGER__USERNAME: "${AIRFLOW__SIMPLE_AUTH_MANAGER__USERNAME}"
+    AIRFLOW__SIMPLE_AUTH_MANAGER__PASSWORD: "${AIRFLOW__SIMPLE_AUTH_MANAGER__PASSWORD}"
   volumes:
     - ../airflow/dags:/opt/airflow/dags
     - ../airflow/logs:/opt/airflow/logs
@@ -16,13 +29,17 @@ x-airflow-common: &airflow-common
 services:
   postgres:
     image: postgres:15
-    env_file: ../.env
+    env_file: .env
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-xxxxxx}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-xxxxxx}"
+      POSTGRES_DB: "${POSTGRES_DB:-xxxxxx}"
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}"]
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-xxxxxx}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -31,7 +48,7 @@ services:
 
   rabbitmq:
     image: rabbitmq:3.12-management
-    env_file: ../.env
+    env_file: .env
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -46,19 +63,14 @@ services:
   airflow-init:
     <<: *airflow-common
     environment:
-      _AIRFLOW_DB_MIGRATE: "true"
-      _AIRFLOW_WWW_USER_CREATE: "true"
-      _AIRFLOW_WWW_USER_USERNAME: "admin"
-      _AIRFLOW_WWW_USER_PASSWORD: "admin"
-      _AIRFLOW_WWW_USER_FIRSTNAME: "Admin"
-      _AIRFLOW_WWW_USER_LASTNAME: "User"
-      _AIRFLOW_WWW_USER_EMAIL: "admin@example.com"
-      _AIRFLOW_WWW_USER_ROLE: "Admin"
+      <<: *airflow-common-env
     command: bash -c "airflow db migrate"
     restart: "no"
 
   scheduler:
     <<: *airflow-common
+    environment:
+      <<: *airflow-common-env
     command: scheduler
     healthcheck:
       test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$$(hostname)\""]
@@ -67,9 +79,25 @@ services:
       retries: 5
       start_period: 30s
 
-  webserver:
+  dag-processor:
     <<: *airflow-common
-    command: webserver
+    environment:
+      <<: *airflow-common-env
+    command: dag-processor
+    restart: always
+
+  triggerer:
+    <<: *airflow-common
+    environment:
+      <<: *airflow-common-env
+    command: triggerer
+    restart: always
+
+  api-server:
+    <<: *airflow-common
+    environment:
+      <<: *airflow-common-env
+    command: api-server
     ports:
       - "8080:8080"
     healthcheck:
