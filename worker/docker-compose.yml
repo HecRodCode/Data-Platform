@@ -1,38 +1,51 @@
+version: '3.8'
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.1-python3.11
+  env_file: .env-worker
+  user: "${AIRFLOW_UID:-50000}:0"
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW__CORE__FERNET_KEY}"
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}"
+    AIRFLOW__CELERY__BROKER_URL: "${AIRFLOW__CELERY__BROKER_URL}"
+    AIRFLOW__CELERY__RESULT_BACKEND: "${AIRFLOW__CELERY__RESULT_BACKEND}"
+    AIRFLOW__CELERY__WORKER_CONCURRENCY: 6
+    AIRFLOW__LOGGING__WORKER_LOG_SERVER_PORT: 8793
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+  restart: unless-stopped
+
 services:
-  worker:
-    image: apache/airflow:3.2.0
+  airflow-worker:
+    <<: *airflow-common
     command: celery worker
-    env_file: .env
-    user: "${AIRFLOW_UID:-1000}:0"
-    environment:
-      AIRFLOW__CORE__EXECUTOR: "${AIRFLOW__CORE__EXECUTOR}"
-      AIRFLOW__CORE__FERNET_KEY: "${AIRFLOW__CORE__FERNET_KEY}"
-      AIRFLOW__CORE__LOAD_EXAMPLES: "${AIRFLOW__CORE__LOAD_EXAMPLES}"
-      AIRFLOW__CORE__HOSTNAME_CALLABLE: "socket.gethostname"
-      AIRFLOW__CORE__HOSTNAME: "${AIRFLOW__CORE__HOSTNAME}"
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}"
-      AIRFLOW__CELERY__BROKER_URL: "${AIRFLOW__CELERY__BROKER_URL}"
-      AIRFLOW__CELERY__RESULT_BACKEND: "${AIRFLOW__CELERY__RESULT_BACKEND}"
-      AIRFLOW__CELERY__WORKER_CONCURRENCY: "${AIRFLOW__CELERY__WORKER_CONCURRENCY}"
-      AIRFLOW__API__SECRET_KEY: "${AIRFLOW__API__SECRET_KEY}"
-      AIRFLOW__API__AUTH_STRATEGIES: "${AIRFLOW__API__AUTH_STRATEGIES}"
-      AIRFLOW__SIMPLE_AUTH_MANAGER__USERNAME: "${AIRFLOW__SIMPLE_AUTH_MANAGER__USERNAME}"
-      AIRFLOW__SIMPLE_AUTH_MANAGER__PASSWORD: "${AIRFLOW__SIMPLE_AUTH_MANAGER__PASSWORD}"
-    volumes:
-      - ../airflow/dags:/opt/airflow/dags
-      - ../airflow/logs:/opt/airflow/logs
-      - ../airflow/plugins:/opt/airflow/plugins
+    ports:
+      - "8793:8793"
     deploy:
       resources:
         limits:
-          memory: 1200M
-          cpus: "0.75"
+          memory: 6500M
         reservations:
-          memory: 512M
-    restart: unless-stopped
+          memory: 2048M
     healthcheck:
-      test: ["CMD-SHELL", "celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d celery@$${HOSTNAME}"]
+      test: ["CMD-SHELL", 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$$(hostname)"']
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 40s
+
+  flower:
+    <<: *airflow-common
+    command: celery flower
+    ports:
+      - "5555:5555"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5555/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
